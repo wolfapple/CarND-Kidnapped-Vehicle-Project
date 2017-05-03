@@ -96,6 +96,49 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	//   3.33. Note that you'll need to switch the minus sign in that equation to a plus to account 
 	//   for the fact that the map's y-axis actually points downwards.)
 	//   http://planning.cs.uiuc.edu/node99.html
+	for (int i = 0; i < num_particles; i++) {
+		double p_x = particles[i].x;
+		double p_y = particles[i].y;
+		double p_theta = particles[i].theta;
+		// Transform to map coordinates
+		vector<LandmarkObs> transformed_observations;		
+		for (int j = 0; j < observations.size(); j++) {
+			int o_id = observations[j].id;
+			double o_x = observations[j].x;
+			double o_y = observations[j].y;
+			double t_x = p_x + o_x * cos(p_theta) - o_y * sin(p_theta);
+			double t_y = p_y + o_y * cos(p_theta) + o_x * sin(p_theta);
+			LandmarkObs to = {o_id, t_x, t_y};
+			transformed_observations.push_back(to);
+		}
+		// Filtering landmarks
+		vector<LandmarkObs> filtered_landmarks;
+		for (int j = 0; j < map_landmarks.landmark_list.size(); j++) {
+			int l_id = map_landmarks.landmark_list[j].id_i;
+			double l_x = map_landmarks.landmark_list[j].x_f;
+      		double l_y = map_landmarks.landmark_list[j].y_f;
+			double distance = dist(l_x, l_y, p_x, p_y);
+			if (distance < sensor_range) {
+				LandmarkObs l = {l_id, l_x, l_y};
+				filtered_landmarks.push_back(l);
+			}
+		}
+		// Nearest Neighbor
+		dataAssociation(filtered_landmarks, transformed_observations);
+		// Multivariate-Gaussian Probability
+		double w = 1.0;
+		for (int j = 0; j < transformed_observations.size(); j++) {
+			int o_id = transformed_observations[j].id;			
+			double d_x = transformed_observations[j].x - filtered_landmarks[o_id].x;
+			double d_y = transformed_observations[j].y - filtered_landmarks[o_id].y;
+			double std_x = std_landmark[0];
+			double std_y = std_landmark[1];
+			double mgp = 1 / (2 * M_PI * std_x * std_x) * exp(-((d_x * d_x / (2 * std_x * std_x)) + (d_y * d_y / (2 * std_y * std_y))));
+			w *= mgp;
+		}
+		weights[i] = w;
+		particles[i].weight = w;
+	}
 }
 
 void ParticleFilter::resample() {
